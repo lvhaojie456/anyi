@@ -366,6 +366,7 @@ export default function App() {
   const [completeData, setCompleteData] = useState({ time: '', location: '', images: [] as string[], remarks: '' });
   const [isCompletionUploading, setIsCompletionUploading] = useState(false);
   const [progressUploadingId, setProgressUploadingId] = useState<string | null>(null);
+  const [imagePreview, setImagePreview] = useState<{ url: string; title: string } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -526,6 +527,15 @@ export default function App() {
   useEffect(() => {
     if (messagesEndRef.current) messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => {
+    if (!imagePreview) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setImagePreview(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [imagePreview]);
 
   const uploadLocalImages = async (files: FileList | File[]) => {
     const selectedFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
@@ -1426,12 +1436,19 @@ setRefreshTrigger(prev => prev + 1);
 
                 <p className="text-sm text-[#2c2c2c]/70 whitespace-pre-wrap bg-[#f5f5f0]/50 rounded-xl p-3">{m.message}</p>
 
-                {(m as any).progress_images && (m as any).progress_images.length > 0 && (
+                {normalizeImageUrls(m.progress_images).length > 0 && (
                   <div className="bg-blue-50 rounded-xl p-4 border border-blue-200/50">
                     <span className="text-[10px] text-blue-700 font-bold block mb-2">📸 管理员提交的进度图片</span>
                     <div className="flex flex-wrap gap-2">
-                      {(m as any).progress_images.map((url, i) => (
-                        <a key={i} href={url} target="_blank" rel="noreferrer" className="text-xs text-blue-600 underline">查看图片{i + 1}</a>
+                      {normalizeImageUrls(m.progress_images).map((url, i) => (
+                        <button
+                          key={`${url}-${i}`}
+                          type="button"
+                          onClick={() => setImagePreview({ url, title: `进度图片 ${i + 1}` })}
+                          className="text-xs text-blue-600 underline"
+                        >
+                          查看图片{i + 1}
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -1444,9 +1461,14 @@ setRefreshTrigger(prev => prev + 1);
                     {normalizeImageUrls(m.completion_images).length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-2">
                         {normalizeImageUrls(m.completion_images).map((url, i) => (
-                          <a key={url} href={url} target="_blank" rel="noreferrer" className="block w-20 h-20 rounded-lg overflow-hidden border border-green-200 bg-white">
+                          <button
+                            key={`${url}-${i}`}
+                            type="button"
+                            onClick={() => setImagePreview({ url, title: `完成反馈 ${i + 1}` })}
+                            className="block w-20 h-20 rounded-lg overflow-hidden border border-green-200 bg-white"
+                          >
                             <img src={url} alt={`完成反馈 ${i + 1}`} className="w-full h-full object-cover" />
-                          </a>
+                          </button>
                         ))}
                       </div>
                     )}
@@ -1892,6 +1914,43 @@ setRefreshTrigger(prev => prev + 1);
       </AnimatePresence>
 
       <AnimatePresence>
+        {imagePreview && (
+          <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+              onClick={() => setImagePreview(null)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 12 }}
+              className="relative max-w-5xl w-full max-h-[90vh] flex flex-col items-center"
+            >
+              <button
+                type="button"
+                onClick={() => setImagePreview(null)}
+                className="absolute -top-3 -right-3 z-10 w-10 h-10 rounded-full bg-white text-[#2c2c2c] shadow-xl flex items-center justify-center hover:bg-[#f5f5f0] transition-colors"
+                aria-label="关闭图片预览"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <img
+                src={imagePreview.url}
+                alt={imagePreview.title}
+                className="max-w-full max-h-[82vh] object-contain rounded-2xl bg-white/5 shadow-2xl"
+              />
+              <div className="mt-3 px-3 py-1 rounded-full bg-white/15 text-white text-xs font-medium">
+                {imagePreview.title}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {isProfileModalOpen && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsProfileModalOpen(false)} />
@@ -2009,9 +2068,14 @@ setRefreshTrigger(prev => prev + 1);
                               <div className="flex flex-wrap gap-2">
                                 {normalizeImageUrls(m.progress_images).map((url: string, i: number) => (
                                   <div key={`${url}-${i}`} className="relative w-20 h-20 rounded-lg overflow-hidden border border-blue-200 bg-white">
-                                    <a href={url} target="_blank" rel="noreferrer" className="block w-full h-full" title={`查看进度图片 ${i + 1}`}>
+                                    <button
+                                      type="button"
+                                      onClick={() => setImagePreview({ url, title: `进度图片 ${i + 1}` })}
+                                      className="block w-full h-full"
+                                      title={`查看进度图片 ${i + 1}`}
+                                    >
                                       <img src={url} alt={`进度图片 ${i + 1}`} className="w-full h-full object-cover" />
-                                    </a>
+                                    </button>
                                     <button
                                       type="button"
                                       title="删除这张进度照片"
