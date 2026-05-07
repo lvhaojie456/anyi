@@ -27,6 +27,7 @@ interface Message {
   id: string;
   memorial_id: string;
   sender_id: string;
+  sender_name?: string;
   content: string;
   created_at: any;
 }
@@ -56,7 +57,7 @@ interface Memorial {
   created_at: any;
   type: 'person' | 'festival';
   event_date?: string;
-  status: 'pending_payment' | 'pending_order' | 'accepted' | 'in_progress' | 'completed';
+  status: 'pending_payment' | 'pending_order' | 'accepted' | 'in_progress' | 'pending_acceptance' | 'completed';
   location?: string;
   remarks?: string;
   completion_time?: string;
@@ -385,27 +386,13 @@ export default function App() {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        
-
-        const localUid = localStorage.getItem('yjas_uid');
-        if (localUid) {
-          const res = await fetch(`/api/users/${localUid}`).then(r => r.json());
-          if (res && res.length > 0) {
-            const userDoc = res[0];
-            setCurrentUser({
-              id: localUid,
-              email: userDoc.email || '',
-              name: userDoc.name,
-              avatar: userDoc.avatar || '',
-              role: userDoc.role
-            });
-          } else {
-            setCurrentUser(null);
-            localStorage.removeItem('yjas_uid');
-          }
-        } else {
+        const response = await fetch('/api/auth/me');
+        if (!response.ok) {
           setCurrentUser(null);
+          return;
         }
+        const data = await response.json();
+        setCurrentUser(data.user);
       } catch (e) {
         console.error("Auth init error:", e);
         setCurrentUser(null);
@@ -532,66 +519,25 @@ export default function App() {
     setSubmitting(true);
     setError('');
 
-    const email = `${uName.trim()}@system.local`;
-
     try {
-      const usersRes = await fetch(`/api/users?username=${uName.trim()}`).then(r => r.json());
-      const existingUser = usersRes[0];
+      const response = await fetch(mode === 'login' ? '/api/auth/login' : '/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: uName.trim(),
+          password: uPass,
+          role
+        })
+      });
+      const data = await response.json().catch(() => ({}));
 
-      if (mode === 'login') {
-        if (!existingUser || existingUser.password !== uPass) {
-          setError('账号或密码错误');
-          setSubmitting(false);
-          return;
-        }
-        if (role === 'admin' && existingUser.role !== 'admin') {
-          setError('该账号无管理员权限');
-          setSubmitting(false);
-          return;
-        }
-        localStorage.setItem('yjas_uid', existingUser.id);
-        setCurrentUser({
-          id: existingUser.id,
-          email: existingUser.email,
-          name: existingUser.name,
-          avatar: existingUser.avatar || '',
-          role: existingUser.role
-        });
-      } else {
-        if (existingUser) {
-          setError('该账号已被注册');
-          setSubmitting(false);
-          return;
-        }
-
-        // 预设管理员账号：用户名为 admin 时自动分配管理员权限
-        const assignedRole = (uName.trim() === 'admin') ? 'admin' : 'user';
-
-        const uid = uuidv4();
-        await fetch('/api/users', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: uid,
-            username: uName.trim(),
-            password: uPass,
-            name: uName.trim(),
-            email: email,
-            role: assignedRole,
-            created_at: new Date().toISOString()
-          })
-        });
-        const res = { id: uid };
-
-        localStorage.setItem('yjas_uid', res.id);
-        setCurrentUser({
-          id: res.id,
-          email: email,
-          name: uName.trim(),
-          avatar: '',
-          role: assignedRole as 'user' | 'admin'
-        });
+      if (!response.ok) {
+        setError(data.error || (mode === 'login' ? '登录失败，请检查账号和密码' : '注册失败，请重试'));
+        setSubmitting(false);
+        return;
       }
+
+      setCurrentUser(data.user);
     } catch (error: any) {
       console.error('Auth error:', error);
       setError(mode === 'login' ? '登录失败，请重试' : '注册失败，请重试');
@@ -601,7 +547,7 @@ export default function App() {
   };
 
   const handleLogout = async () => {
-    localStorage.removeItem('yjas_uid');
+    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => null);
     setCurrentUser(null);
   };
 
@@ -697,8 +643,7 @@ ${charMsg}
     setIsPersonSubmitting(true);
 
     try {
-      const uid = uuidv4();
-      await fetch('/api/memorials', {
+      const response = await fetch('/api/memorials', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -713,9 +658,10 @@ ${charMsg}
         created_at: new Date().toISOString(),
         type: 'person',
         status: isQingming ? 'pending_payment' : 'accepted'
-      , id: uid})
+      })
       });
-      const docRef = { id: uid };
+      if (!response.ok) throw new Error('发布失败');
+      const docRef = await response.json();
 
       setPersonMessage(''); setPersonImageUrl(''); setPersonName(''); setPersonRelation(''); setPersonBirthDate(''); setPersonDeathDate('');
       setIsPublishModalOpen(false);
@@ -739,8 +685,7 @@ ${charMsg}
     setIsFestivalSubmitting(true);
 
     try {
-      const uid = uuidv4();
-      await fetch('/api/memorials', {
+      const response = await fetch('/api/memorials', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -755,18 +700,17 @@ ${charMsg}
         created_at: new Date().toISOString(),
         type: 'festival',
         status: 'pending_payment'
-      , id: uid})
+      })
       });
-      const docRef = { id: uid };
+      if (!response.ok) throw new Error('提交失败');
+      const docRef = await response.json();
 
       setFestivalMessage(''); setFestivalImageUrl(''); setFestivalName(''); setFestivalEventDate(''); setFestivalPlan(50); setFestivalRemarks('');
       setIsPublishModalOpen(false);
       setRefreshTrigger(prev => prev + 1);
 
-      if (isQingming) {
-        setPendingMemorialId(docRef.id);
-        setPaymentModalOpen(true);
-      }
+      setPendingMemorialId(docRef.id);
+      setPaymentModalOpen(true);
     } catch (error) {
       console.error(error);
       alert('发布失败，请重试');
@@ -1436,15 +1380,8 @@ setRefreshTrigger(prev => prev + 1);
                       <button onClick={async () => {
                         try {
                           const res = await fetch(`/api/memorials/${m.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'completed', completed_at: new Date().toISOString() }) });
-setRefreshTrigger(prev => prev + 1);
-                          if (res.updated === 0) {
-                            await fetch(`/api/memorials/${m.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'completed', completed_at: new Date().toISOString() })
-      });
-setRefreshTrigger(prev => prev + 1);
-                          }
+                          if (!res.ok) throw new Error('确认完成失败');
+                          setRefreshTrigger(prev => prev + 1);
                         } catch (e) {
                           console.error('验收失败:', e);
                           alert('验收失败: ' + (e.message || e));

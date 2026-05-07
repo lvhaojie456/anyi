@@ -31,9 +31,14 @@ CREATE TABLE memorials (
   location TEXT,
   completion_time TEXT,
   completion_location TEXT,
-  completion_images TEXT,
-  completion_remarks TEXT
+  completion_images TEXT DEFAULT '[]',
+  completion_remarks TEXT,
+  progress_images TEXT DEFAULT '[]',
+  completed_at TEXT
 );
+
+CREATE INDEX idx_memorials_author_id ON memorials(author_id);
+CREATE INDEX idx_memorials_status_created_at ON memorials(status, created_at);
 
 DROP TABLE IF EXISTS forum_posts;
 CREATE TABLE forum_posts (
@@ -44,8 +49,13 @@ CREATE TABLE forum_posts (
   user_name TEXT,
   user_role TEXT,
   user_avatar TEXT,
-  image_url TEXT
+  image_url TEXT,
+  flowers TEXT DEFAULT '[]',
+  forum_comments TEXT DEFAULT '[]',
+  deleted INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE INDEX idx_forum_posts_created_at ON forum_posts(created_at);
 
 DROP TABLE IF EXISTS comments;
 CREATE TABLE comments (
@@ -57,6 +67,8 @@ CREATE TABLE comments (
   user_name TEXT
 );
 
+CREATE INDEX idx_comments_memorial_id ON comments(memorial_id);
+
 DROP TABLE IF EXISTS messages;
 CREATE TABLE messages (
   id TEXT PRIMARY KEY,
@@ -66,5 +78,8 @@ CREATE TABLE messages (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Insert admin user (optional default)
--- INSERT INTO users (id, username, password, name, email, role) VALUES ('admin', 'admin', 'admin123', 'Admin', 'admin@system.local', 'admin');
+CREATE INDEX idx_messages_memorial_id_created_at ON messages(memorial_id, created_at);
+
+-- Admin users are no longer created by choosing the username "admin".
+-- To bootstrap admin registration, set ADMIN_USERNAMES in Cloudflare, for example:
+-- ADMIN_USERNAMES=admin

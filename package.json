@@ -8,7 +8,8 @@
     "build": "vite build --config client/vite.config.ts client",
     "preview": "vite preview --config client/vite.config.ts client",
     "clean": "rimraf client/dist",
-    "lint": "tsc --project client/tsconfig.json --noEmit",
+    "types:cf": "wrangler types functions/worker-configuration.d.ts",
+    "lint": "tsc --project client/tsconfig.json --noEmit && tsc --project functions/tsconfig.json --noEmit",
     "deploy": "wrangler pages deploy",
     "dev:server": "wrangler pages dev client/dist"
   },

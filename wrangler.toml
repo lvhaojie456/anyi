@@ -1,12 +1,12 @@
-name = "yjas-memorial"
-compatibility_date = "2024-03-20"
+name = "anyi"
+compatibility_date = "2026-05-01"
 pages_build_output_dir = "client/dist"
 
 # D1 Database Binding
 [[d1_databases]]
 binding = "DB"
 database_name = "yjas-db"
-database_id = "fa9c0510-2043-4cb2-af08-0c35ab24e614" # Replace with actual DB ID after creation
+database_id = "fa9c0510-2043-4cb2-af08-0c35ab24e614"
 preview_database_id = "DB" # Use local testing
 
 # R2 Bucket Binding
