@@ -367,6 +367,7 @@ export default function App() {
   const [isCompletionUploading, setIsCompletionUploading] = useState(false);
   const [progressUploadingId, setProgressUploadingId] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<{ url: string; title: string } | null>(null);
+  const [mobileSection, setMobileSection] = useState<'forum' | 'chat'>('forum');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -1619,10 +1620,10 @@ setRefreshTrigger(prev => prev + 1);
           </div>
         </header>
 
-        <main className="max-w-7xl mx-auto px-4 py-8">
+        <main className="max-w-7xl mx-auto px-4 pt-5 pb-32 lg:py-8">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2 flex flex-col gap-6">
-              <div className="bg-white/40 backdrop-blur-xl rounded-[2.5rem] p-8 shadow-2xl border border-white/50 flex flex-col h-[800px] group transition-all hover:bg-white/50">
+            <div className={`${mobileSection === 'forum' ? 'flex' : 'hidden'} lg:flex lg:col-span-2 flex-col gap-6`}>
+              <div className="bg-white/40 backdrop-blur-xl rounded-[2rem] lg:rounded-[2.5rem] p-4 sm:p-6 lg:p-8 shadow-2xl border border-white/50 flex flex-col h-[calc(100vh-220px)] min-h-[520px] lg:h-[800px] group transition-all hover:bg-white/50">
                 <div className="flex items-center justify-between mb-6 pb-4 border-b border-[#2c2c2c]/5">
                   <div className="flex items-center gap-2">
                     <Flower2 className="w-6 h-6 text-[#5A5A40]" />
@@ -1692,8 +1693,8 @@ setRefreshTrigger(prev => prev + 1);
               </div>
             </div>
 
-            <div className="lg:col-span-1 flex flex-col gap-6 sticky top-24 h-fit">
-              <div className="bg-white/40 backdrop-blur-xl rounded-[2.5rem] shadow-2xl border border-white/50 flex flex-col h-[600px] overflow-hidden group transition-all hover:bg-white/50">
+            <div className={`${mobileSection === 'chat' ? 'flex' : 'hidden'} lg:flex lg:col-span-1 flex-col gap-6 lg:sticky lg:top-24 h-fit`}>
+              <div className="bg-white/40 backdrop-blur-xl rounded-[2rem] lg:rounded-[2.5rem] shadow-2xl border border-white/50 flex flex-col h-[calc(100vh-220px)] min-h-[520px] lg:h-[600px] overflow-hidden group transition-all hover:bg-white/50">
                 <div className="px-6 py-4 border-b border-[#2c2c2c]/5 bg-[#f5f5f0]/50 shrink-0">
                   <div className="flex items-center gap-3 mb-2">
                     <div className="w-10 h-10 rounded-full bg-[#5A5A40]/10 flex items-center justify-center">
@@ -1803,10 +1804,38 @@ setRefreshTrigger(prev => prev + 1);
         {/* Mobile Floating Action Button */}
         <button
           onClick={() => setIsPublishModalOpen(true)}
-          className="lg:hidden fixed bottom-6 right-6 z-40 bg-gradient-to-r from-[#5A5A40] to-[#7a7a60] text-white w-14 h-14 rounded-full shadow-2xl flex items-center justify-center active:scale-95 hover:scale-105 transition-all"
+          aria-label="发布追思"
+          className="lg:hidden fixed bottom-24 right-5 z-40 bg-gradient-to-r from-[#5A5A40] to-[#7a7a60] text-white w-14 h-14 rounded-full shadow-2xl flex items-center justify-center active:scale-95 hover:scale-105 transition-all"
         >
           <Plus className="w-7 h-7" />
         </button>
+
+        <nav className="lg:hidden fixed bottom-4 left-4 right-4 z-50 grid grid-cols-3 gap-2 rounded-[1.5rem] border border-white/60 bg-white/80 backdrop-blur-2xl p-2 shadow-2xl">
+          <button
+            type="button"
+            onClick={() => setMobileSection('forum')}
+            className={`flex flex-col items-center justify-center gap-1 rounded-2xl py-2.5 text-[11px] font-bold transition-all ${mobileSection === 'forum' ? 'bg-[#5A5A40] text-white shadow-lg' : 'text-[#5A5A40]/60 hover:bg-white/70'}`}
+          >
+            <Flower2 className="w-4 h-4" />
+            追思圈
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileSection('chat')}
+            className={`flex flex-col items-center justify-center gap-1 rounded-2xl py-2.5 text-[11px] font-bold transition-all ${mobileSection === 'chat' ? 'bg-[#5A5A40] text-white shadow-lg' : 'text-[#5A5A40]/60 hover:bg-white/70'}`}
+          >
+            <MessageCircle className="w-4 h-4" />
+            亲人聊天
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsProfileModalOpen(true)}
+            className="flex flex-col items-center justify-center gap-1 rounded-2xl py-2.5 text-[11px] font-bold text-[#5A5A40]/60 hover:bg-white/70 transition-all"
+          >
+            {currentUser.role === 'admin' ? <Shield className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+            {currentUser.role === 'admin' ? '管理' : '记录'}
+          </button>
+        </nav>
       </div>
 
       <AnimatePresence>
