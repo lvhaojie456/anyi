@@ -62,10 +62,23 @@ interface Memorial {
   remarks?: string;
   completion_time?: string;
   completion_location?: string;
-  completion_images?: string;
+  completion_images?: string | string[];
   completion_remarks?: string;
+  progress_images?: string[];
   comments?: Comment[];
 }
+
+const normalizeImageUrls = (value: unknown): string[] => {
+  if (Array.isArray(value)) return value.filter((url): url is string => typeof url === 'string' && url.length > 0);
+  if (typeof value !== 'string' || !value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed.filter((url): url is string => typeof url === 'string' && url.length > 0);
+  } catch {
+    // Plain URL from older data.
+  }
+  return [value];
+};
 
 const isQingmingPeriod = () => {
   const now = new Date();
@@ -339,7 +352,9 @@ export default function App() {
 
   // Complete state
   const [completeModalOpen, setCompleteModalOpen] = useState(false);
-  const [completeData, setCompleteData] = useState({ time: '', location: '', images: '', remarks: '' });
+  const [completeData, setCompleteData] = useState({ time: '', location: '', images: [] as string[], remarks: '' });
+  const [isCompletionUploading, setIsCompletionUploading] = useState(false);
+  const [progressUploadingId, setProgressUploadingId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -500,6 +515,22 @@ export default function App() {
   useEffect(() => {
     if (messagesEndRef.current) messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  const uploadLocalImages = async (files: FileList | File[]) => {
+    const selectedFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
+    if (selectedFiles.length === 0) return [];
+
+    return Promise.all(selectedFiles.map(async (file) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await fetch('/api/upload', { method: 'POST', body: formData });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.url) {
+        throw new Error(data.error || `${file.name} 上传失败`);
+      }
+      return data.url as string;
+    }));
+  };
 
   const handleAuthSubmit = async (
     e: React.FormEvent,
@@ -777,7 +808,7 @@ setRefreshTrigger(prev => prev + 1);
 
   const handleCompleteOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pendingMemorialId) return;
+    if (!pendingMemorialId || isCompletionUploading) return;
     try {
       await fetch(`/api/memorials/${pendingMemorialId}`, {
         method: 'PUT',
@@ -793,6 +824,7 @@ setRefreshTrigger(prev => prev + 1);
 setRefreshTrigger(prev => prev + 1);
       setCompleteModalOpen(false);
       setPendingMemorialId(null);
+      setCompleteData({ time: '', location: '', images: [], remarks: '' });
     } catch (error) {
       console.error('Complete failed:', error);
     }
@@ -1359,11 +1391,19 @@ setRefreshTrigger(prev => prev + 1);
                   </div>
                 )}
 
-                {m.status === 'completed' && (m.completion_images || m.completion_remarks) && (
+                {m.status === 'completed' && (normalizeImageUrls(m.completion_images).length > 0 || m.completion_remarks) && (
                   <div className="bg-green-50 rounded-xl p-4 border border-green-200/50">
                     <span className="text-[10px] text-green-700 font-bold block mb-2">✅ 已完成</span>
                     {m.completion_remarks && <p className="text-xs text-green-800">📝 {m.completion_remarks}</p>}
-                    {m.completion_images && <p className="text-xs text-green-800 mt-1">📸 <a href={m.completion_images} target="_blank" rel="noreferrer" className="underline">查看实拍</a></p>}
+                    {normalizeImageUrls(m.completion_images).length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {normalizeImageUrls(m.completion_images).map((url, i) => (
+                          <a key={url} href={url} target="_blank" rel="noreferrer" className="block w-20 h-20 rounded-lg overflow-hidden border border-green-200 bg-white">
+                            <img src={url} alt={`完成反馈 ${i + 1}`} className="w-full h-full object-cover" />
+                          </a>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1754,9 +1794,49 @@ setRefreshTrigger(prev => prev + 1);
               <form onSubmit={handleCompleteOrder} className="space-y-4">
                 <div><label className="block text-xs font-medium text-[#2c2c2c]/40 mb-1">完成时间</label><input type="datetime-local" required value={completeData.time} onChange={(e) => setCompleteData({ ...completeData, time: e.target.value })} className="w-full px-4 py-2 rounded-xl border border-[#2c2c2c]/10 outline-none bg-[#f5f5f0]/50" /></div>
                 <div><label className="block text-xs font-medium text-[#2c2c2c]/40 mb-1">完成地点</label><input type="text" required value={completeData.location} onChange={(e) => setCompleteData({ ...completeData, location: e.target.value })} className="w-full px-4 py-2 rounded-xl border border-[#2c2c2c]/10 outline-none bg-[#f5f5f0]/50" placeholder="如：XX公墓" /></div>
-                <div><label className="block text-xs font-medium text-[#2c2c2c]/40 mb-1">现场照片 (链接)</label><input type="url" value={completeData.images} onChange={(e) => setCompleteData({ ...completeData, images: e.target.value })} className="w-full px-4 py-2 rounded-xl border border-[#2c2c2c]/10 outline-none bg-[#f5f5f0]/50" placeholder="https://..." /></div>
+                <div>
+                  <label className="block text-xs font-medium text-[#2c2c2c]/40 mb-1">现场照片（本地上传）</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    disabled={isCompletionUploading}
+                    onChange={async (e) => {
+                      const files = e.currentTarget.files;
+                      if (!files || files.length === 0) return;
+                      setIsCompletionUploading(true);
+                      try {
+                        const urls = await uploadLocalImages(files);
+                        setCompleteData(prev => ({ ...prev, images: [...prev.images, ...urls] }));
+                      } catch (error: any) {
+                        alert(error.message || '现场照片上传失败');
+                      } finally {
+                        setIsCompletionUploading(false);
+                        e.currentTarget.value = '';
+                      }
+                    }}
+                    className="w-full px-4 py-2 rounded-xl border border-[#2c2c2c]/10 outline-none bg-[#f5f5f0]/50 text-sm"
+                  />
+                  {isCompletionUploading && <p className="text-xs text-[#5A5A40] mt-1">照片上传中...</p>}
+                  {completeData.images.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {completeData.images.map((url, i) => (
+                        <div key={url} className="relative w-16 h-16 rounded-lg overflow-hidden border border-[#2c2c2c]/10 bg-[#f5f5f0]">
+                          <img src={url} alt={`现场照片 ${i + 1}`} className="w-full h-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => setCompleteData(prev => ({ ...prev, images: prev.images.filter(item => item !== url) }))}
+                            className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/60 text-white text-xs leading-none"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <div><label className="block text-xs font-medium text-[#2c2c2c]/40 mb-1">备注说明</label><textarea value={completeData.remarks} onChange={(e) => setCompleteData({ ...completeData, remarks: e.target.value })} className="w-full px-4 py-2 rounded-xl border border-[#2c2c2c]/10 outline-none bg-[#f5f5f0]/50 resize-none" rows={3} /></div>
-                <button type="submit" className="w-full bg-[#5A5A40] text-white py-4 rounded-xl font-medium hover:bg-[#4a4a35] transition-colors mt-4">确认完成</button>
+                <button type="submit" disabled={isCompletionUploading} className="w-full bg-[#5A5A40] text-white py-4 rounded-xl font-medium hover:bg-[#4a4a35] transition-colors mt-4 disabled:opacity-50">确认完成</button>
               </form>
             </motion.div>
           </div>
@@ -1921,17 +2001,38 @@ setRefreshTrigger(prev => prev + 1); } catch (e) { console.error(e); } }} classN
                           )}
                           {m.status === 'in_progress' && (
                             <>
-                              <button onClick={async () => {
-                                const url = prompt('请输入进度图片链接（URL）：');
-                                if (!url) return;
-                                try {
-                                  const existing = (m as any).progress_images || [];
-                                  await fetch(`/api/memorials/${m.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ progress_images: [...existing, url] }) });
-setRefreshTrigger(prev => prev + 1);
-                                } catch (e) { console.error(e); }
-                              }} className="flex items-center gap-1.5 px-4 py-2 bg-sky-600 text-white rounded-xl text-xs font-medium hover:bg-sky-700 transition-colors shadow-sm">
-                                📸 提交进度图片
-                              </button>
+                              <label className={`flex items-center gap-1.5 px-4 py-2 bg-sky-600 text-white rounded-xl text-xs font-medium transition-colors shadow-sm ${progressUploadingId === m.id ? 'opacity-60 cursor-wait' : 'hover:bg-sky-700 cursor-pointer'}`}>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  multiple
+                                  disabled={progressUploadingId === m.id}
+                                  className="hidden"
+                                  onChange={async (e) => {
+                                    const files = e.currentTarget.files;
+                                    if (!files || files.length === 0) return;
+                                    setProgressUploadingId(m.id);
+                                    try {
+                                      const urls = await uploadLocalImages(files);
+                                      const existing = normalizeImageUrls((m as any).progress_images);
+                                      const response = await fetch(`/api/memorials/${m.id}`, {
+                                        method: 'PUT',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ progress_images: [...existing, ...urls] })
+                                      });
+                                      if (!response.ok) throw new Error('进度照片保存失败');
+                                      setRefreshTrigger(prev => prev + 1);
+                                    } catch (error: any) {
+                                      console.error(error);
+                                      alert(error.message || '进度照片上传失败');
+                                    } finally {
+                                      setProgressUploadingId(null);
+                                      e.currentTarget.value = '';
+                                    }
+                                  }}
+                                />
+                                📸 {progressUploadingId === m.id ? '上传中...' : '提交进度照片'}
+                              </label>
                               <button onClick={async () => { try { await fetch(`/api/memorials/${m.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
