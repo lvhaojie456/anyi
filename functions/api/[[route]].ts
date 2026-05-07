@@ -43,7 +43,6 @@ type AppContext = Context<{ Bindings: AppEnv }>;
 const app = new Hono<{ Bindings: AppEnv }>().basePath('/api');
 const SESSION_COOKIE = 'anyi_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
-const PASSWORD_ITERATIONS = 120_000;
 const encoder = new TextEncoder();
 
 const allowedStatuses = new Set<MemorialStatus>([
@@ -158,16 +157,18 @@ const setSessionCookie = async (c: AppContext, userId: string) => {
 
 const hashPassword = async (password: string) => {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const material = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt, iterations: PASSWORD_ITERATIONS, hash: 'SHA-256' },
-    material,
-    256
-  );
-  return `pbkdf2$${PASSWORD_ITERATIONS}$${base64UrlEncode(salt)}$${base64UrlEncode(new Uint8Array(bits))}`;
+  const digest = await crypto.subtle.digest('SHA-256', encoder.encode(`${base64UrlEncode(salt)}.${password}`));
+  return `sha256$${base64UrlEncode(salt)}$${base64UrlEncode(new Uint8Array(digest))}`;
 };
 
 const verifyPassword = async (password: string, stored: string) => {
+  if (stored.startsWith('sha256$')) {
+    const [, saltText, hashText] = stored.split('$');
+    if (!saltText || !hashText) return false;
+    const digest = await crypto.subtle.digest('SHA-256', encoder.encode(`${saltText}.${password}`));
+    return constantTimeEqual(new Uint8Array(digest), base64UrlDecode(hashText));
+  }
+
   if (!stored.startsWith('pbkdf2$')) {
     return constantTimeEqual(encoder.encode(password), encoder.encode(stored));
   }
@@ -222,7 +223,23 @@ const isAdminUsername = (env: AppEnv, username: string) => {
 
 app.onError((error, c) => {
   console.error(JSON.stringify({ message: error.message, stack: error.stack }));
+  if (error.message.includes('AUTH_SECRET')) {
+    return c.json({ error: error.message }, 500);
+  }
   return c.json({ error: 'Internal server error' }, 500);
+});
+
+app.get('/health', (c) => {
+  return c.json({
+    ok: true,
+    bindings: {
+      DB: Boolean(c.env.DB),
+      BUCKET: Boolean(c.env.BUCKET),
+      AUTH_SECRET: Boolean(c.env.AUTH_SECRET && c.env.AUTH_SECRET.length >= 32),
+      ADMIN_USERNAMES: Boolean(c.env.ADMIN_USERNAMES),
+      SILICONFLOW_API_KEY: Boolean(c.env.SILICONFLOW_API_KEY)
+    }
+  });
 });
 
 app.get('/auth/me', async (c) => {
