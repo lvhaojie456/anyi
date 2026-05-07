@@ -390,6 +390,7 @@ export default function App() {
 
   // Modals state
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isUserRecordsModalOpen, setIsUserRecordsModalOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
   const [publishType, setPublishType] = useState<'person' | 'festival'>('person');
@@ -1829,7 +1830,7 @@ setRefreshTrigger(prev => prev + 1);
           </button>
           <button
             type="button"
-            onClick={() => setIsProfileModalOpen(true)}
+            onClick={() => currentUser.role === 'admin' ? setIsProfileModalOpen(true) : setIsUserRecordsModalOpen(true)}
             className="flex flex-col items-center justify-center gap-1 rounded-2xl py-2.5 text-[11px] font-bold text-[#5A5A40]/60 hover:bg-white/70 transition-all"
           >
             {currentUser.role === 'admin' ? <Shield className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
@@ -1837,6 +1838,44 @@ setRefreshTrigger(prev => prev + 1);
           </button>
         </nav>
       </div>
+
+      <AnimatePresence>
+        {isUserRecordsModalOpen && currentUser.role !== 'admin' && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setIsUserRecordsModalOpen(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 16 }}
+              className="relative w-full max-w-2xl bg-white/90 backdrop-blur-2xl rounded-[2rem] overflow-hidden flex flex-col max-h-[82vh] shadow-2xl border border-white/50"
+            >
+              <div className="px-5 py-4 border-b border-[#2c2c2c]/5 bg-[#f5f5f0]/70 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-[#5A5A40]/10 flex items-center justify-center">
+                    <Clock className="w-5 h-5 text-[#5A5A40]" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-serif font-bold text-[#2c2c2c]">我的追思记录</h3>
+                    <p className="text-xs text-[#2c2c2c]/50">共 {userMemorials.length} 条发布记录</p>
+                  </div>
+                </div>
+                <button onClick={() => setIsUserRecordsModalOpen(false)} className="p-2 hover:bg-white/60 rounded-full transition-colors">
+                  <X className="w-5 h-5 text-[#2c2c2c]/50" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 bg-[#f5f5f0]/30">
+                {renderUserOrderTrackingView()}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {paymentModalOpen && (
