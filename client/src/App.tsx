@@ -80,6 +80,17 @@ const normalizeImageUrls = (value: unknown): string[] => {
   return [value];
 };
 
+const assetKeyFromUrl = (url: string) => {
+  try {
+    const parsed = new URL(url, window.location.origin);
+    const prefix = '/api/assets/';
+    if (!parsed.pathname.startsWith(prefix)) return '';
+    return decodeURIComponent(parsed.pathname.slice(prefix.length));
+  } catch {
+    return '';
+  }
+};
+
 const isQingmingPeriod = () => {
   const now = new Date();
   const year = now.getFullYear();
@@ -530,6 +541,41 @@ export default function App() {
       }
       return data.url as string;
     }));
+  };
+
+  const deleteUploadedAsset = async (url: string) => {
+    const key = assetKeyFromUrl(url);
+    if (!key) return;
+    const response = await fetch(`/api/assets/${encodeURIComponent(key)}`, { method: 'DELETE' });
+    if (!response.ok && response.status !== 404) {
+      throw new Error('照片文件清理失败');
+    }
+  };
+
+  const handleDeleteProgressImage = async (memorial: Memorial, imageIndex: number) => {
+    if (!confirm('确定删除这张进度照片吗？')) return;
+    try {
+      const existing = normalizeImageUrls(memorial.progress_images);
+      const deletedUrl = existing[imageIndex];
+      const nextImages = existing.filter((_, index) => index !== imageIndex);
+      const response = await fetch(`/api/memorials/${memorial.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ progress_images: nextImages })
+      });
+      if (!response.ok) throw new Error('进度照片删除失败');
+      if (deletedUrl) {
+        try {
+          await deleteUploadedAsset(deletedUrl);
+        } catch (cleanupError) {
+          console.warn('Progress image removed from order, but asset cleanup failed:', cleanupError);
+        }
+      }
+      setRefreshTrigger(prev => prev + 1);
+    } catch (error: any) {
+      console.error('Delete progress image failed:', error);
+      alert(error.message || '进度照片删除失败');
+    }
   };
 
   const handleAuthSubmit = async (
@@ -1419,7 +1465,7 @@ setRefreshTrigger(prev => prev + 1);
                     <div className="flex items-center gap-2">
                       <button onClick={async () => {
                         try {
-                          const res = await fetch(`/api/memorials/${m.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'completed', completed_at: new Date().toISOString() }) });
+                          const res = await fetch(`/api/memorials/${m.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'completed' }) });
                           if (!res.ok) throw new Error('确认完成失败');
                           setRefreshTrigger(prev => prev + 1);
                         } catch (e) {
@@ -1825,8 +1871,10 @@ setRefreshTrigger(prev => prev + 1);
                           <img src={url} alt={`现场照片 ${i + 1}`} className="w-full h-full object-cover" />
                           <button
                             type="button"
+                            title="移除这张现场照片"
+                            aria-label={`移除现场照片 ${i + 1}`}
                             onClick={() => setCompleteData(prev => ({ ...prev, images: prev.images.filter(item => item !== url) }))}
-                            className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/60 text-white text-xs leading-none"
+                            className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/60 text-white text-xs leading-none hover:bg-red-600 transition-colors"
                           >
                             ×
                           </button>
@@ -1955,12 +2003,25 @@ setRefreshTrigger(prev => prev + 1);
                             </div>
                           )}
                           {/* Progress images from admin */}
-                          {(m as any).progress_images && (m as any).progress_images.length > 0 && (
+                          {normalizeImageUrls(m.progress_images).length > 0 && (
                             <div className="bg-blue-50 rounded-xl p-4 border border-blue-200/50">
                               <span className="text-[10px] text-blue-700 font-bold block mb-2">📸 已提交的进度图片</span>
                               <div className="flex flex-wrap gap-2">
-                                {(m as any).progress_images.map((url: string, i: number) => (
-                                  <a key={i} href={url} target="_blank" rel="noreferrer" className="text-xs text-blue-600 underline">图片{i + 1}</a>
+                                {normalizeImageUrls(m.progress_images).map((url: string, i: number) => (
+                                  <div key={`${url}-${i}`} className="relative w-20 h-20 rounded-lg overflow-hidden border border-blue-200 bg-white">
+                                    <a href={url} target="_blank" rel="noreferrer" className="block w-full h-full" title={`查看进度图片 ${i + 1}`}>
+                                      <img src={url} alt={`进度图片 ${i + 1}`} className="w-full h-full object-cover" />
+                                    </a>
+                                    <button
+                                      type="button"
+                                      title="删除这张进度照片"
+                                      aria-label={`删除进度照片 ${i + 1}`}
+                                      onClick={() => handleDeleteProgressImage(m, i)}
+                                      className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/65 text-white text-xs leading-none hover:bg-red-600 transition-colors"
+                                    >
+                                      ×
+                                    </button>
+                                  </div>
                                 ))}
                               </div>
                             </div>

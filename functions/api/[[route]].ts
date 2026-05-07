@@ -338,6 +338,17 @@ app.get('/assets/:key', async (c) => {
   return new Response(object.body, { headers });
 });
 
+app.delete('/assets/:key', async (c) => {
+  const auth = await requireAdmin(c);
+  if ('response' in auth) return auth.response;
+
+  const key = c.req.param('key');
+  if (!/^[a-z0-9-]+\.[a-z0-9]+$/iu.test(key)) return c.json({ error: 'Invalid asset key.' }, 400);
+
+  await c.env.BUCKET.delete(key);
+  return c.json({ success: true });
+});
+
 app.get('/users', async (c) => {
   const auth = await requireAdmin(c);
   if ('response' in auth) return auth.response;
@@ -552,21 +563,26 @@ app.put('/memorials/:id', async (c) => {
   const body = await c.req.json();
   const updates: string[] = [];
   const values: (string | number | null)[] = [];
+  let userCanAcceptCompleted = false;
 
   if (body.status !== undefined) {
     const nextStatus = allowedStatuses.has(body.status) ? body.status as MemorialStatus : null;
     if (!nextStatus) return c.json({ error: 'Invalid status.' }, 400);
 
     const userCanPayOwnOrder = auth.user.id === memorial.author_id && memorial.status === 'pending_payment' && nextStatus === 'pending_order';
-    const userCanAcceptCompleted = auth.user.id === memorial.author_id && memorial.status === 'pending_acceptance' && nextStatus === 'completed';
+    userCanAcceptCompleted = auth.user.id === memorial.author_id && memorial.status === 'pending_acceptance' && nextStatus === 'completed';
     if (auth.user.role !== 'admin' && !userCanPayOwnOrder && !userCanAcceptCompleted) return c.json({ error: 'Forbidden' }, 403);
 
     updates.push('status = ?');
     values.push(nextStatus);
+    if (userCanAcceptCompleted) {
+      updates.push('completed_at = ?');
+      values.push(new Date().toISOString());
+    }
   }
 
   const adminOnlyFields = ['completion_time', 'completion_location', 'completion_images', 'completion_remarks', 'progress_images', 'completed_at'] as const;
-  if (adminOnlyFields.some(field => body[field] !== undefined) && auth.user.role !== 'admin') {
+  if (adminOnlyFields.some(field => body[field] !== undefined && !(field === 'completed_at' && userCanAcceptCompleted)) && auth.user.role !== 'admin') {
     return c.json({ error: 'Forbidden' }, 403);
   }
 
@@ -575,7 +591,7 @@ app.put('/memorials/:id', async (c) => {
   if (body.completion_images !== undefined) { updates.push('completion_images = ?'); values.push(JSON.stringify(Array.isArray(body.completion_images) ? body.completion_images : [body.completion_images].filter(Boolean))); }
   if (body.completion_remarks !== undefined) { updates.push('completion_remarks = ?'); values.push(optionalString(body.completion_remarks, 2000)); }
   if (body.progress_images !== undefined) { updates.push('progress_images = ?'); values.push(JSON.stringify(Array.isArray(body.progress_images) ? body.progress_images : [body.progress_images].filter(Boolean))); }
-  if (body.completed_at !== undefined) { updates.push('completed_at = ?'); values.push(optionalString(body.completed_at, 80)); }
+  if (body.completed_at !== undefined && auth.user.role === 'admin') { updates.push('completed_at = ?'); values.push(optionalString(body.completed_at, 80)); }
 
   if (updates.length > 0) {
     values.push(id);
